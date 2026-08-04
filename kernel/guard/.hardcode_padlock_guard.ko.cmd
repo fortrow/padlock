@@ -1,0 +1,1 @@
+savedcmd_hardcode_padlock_guard.ko := ld -r -m elf_x86_64 -z noexecstack --no-warn-rwx-segments --build-id=sha1  -T /usr/src/linux-headers-7.0.0-28-generic/scripts/module.lds -o hardcode_padlock_guard.ko hardcode_padlock_guard.o hardcode_padlock_guard.mod.o .module-common.o
