@@ -298,13 +298,18 @@ While a protected file has no active write session, the module denies write perm
 
 ## Usage
 
+Padlock resolves the store path in this order:
+
+1. If `PADLOCK_STORE_ROOT` is set, it uses `<store-root>/store.plk`.
+2. Otherwise it uses `~/.padlock/store.plk`.
+
 ### Allocate a store
 
 ```bash
 padlock allocate 2GB
 ```
 
-Or specify a custom path:
+Or specify a custom path for the standalone CLI:
 
 ```bash
 padlock allocate 2GB /home/ryan/.padlock/custom.plk
@@ -316,7 +321,7 @@ padlock allocate 2GB /home/ryan/.padlock/custom.plk
 padlock set api_key "super-secret-value"
 ```
 
-With an explicit path:
+With an explicit path for the standalone CLI:
 
 ```bash
 padlock set api_key "super-secret-value" /home/ryan/.padlock/custom.plk
@@ -328,7 +333,19 @@ padlock set api_key "super-secret-value" /home/ryan/.padlock/custom.plk
 padlock get api_key
 ```
 
-The command prompts once for the Linux password, authenticates it with PAM, derives the header password, unseals the TPM-backed secret, and returns the most recent matching value.
+The command prompts once for the Linux password, authenticates it with PAM,
+derives the header password, unseals the TPM-backed secret, and returns the
+most recent matching value.
+
+When Padlock is installed with `--enclave`, the wrapper only supports:
+
+```bash
+padlock get <key>
+padlock set <key> <value>
+```
+
+In enclave mode the wrapper prepends `sudo -u enclave`, sets `PADLOCK_STORE_ROOT`
+to `/enclave/keystore`, and rejects `allocate` and custom path arguments.
 
 ## Files It Creates
 
@@ -339,6 +356,7 @@ The command prompts once for the Linux password, authenticates it with PAM, deri
   `--disk-img`
 - `~/.padlock/tpm/header-hmac.pub` - TPM public blob for the sealed secret
 - `~/.padlock/tpm/header-hmac.priv` - TPM private blob for the sealed secret
+- When `PADLOCK_STORE_ROOT` is set, `store.plk` lives directly under that root.
 
 ## Common Setup Problems
 
