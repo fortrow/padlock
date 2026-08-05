@@ -280,6 +280,23 @@ static int derive_header_password(const char *username, char *header_password, s
 
     no_prompt = pam_service_is_passwordless_for_user(username);
 
+    if (no_prompt) {
+        result = padlock_derive_user_header_password(username, header_password, header_password_length);
+        if (result != 0) {
+            if (errno == EACCES) {
+                copy_message(reason, reason_length, "TPM access denied while deriving header password");
+            } else if (errno != 0) {
+                char detail[128];
+                snprintf(detail, sizeof(detail), "header password derivation failed: %s", strerror(errno));
+                copy_message(reason, reason_length, detail);
+            } else {
+                errno = EIO;
+                copy_message(reason, reason_length, "header password derivation failed");
+            }
+        }
+        return result;
+    }
+
     if (!no_prompt) {
         if (snprintf(prompt, sizeof(prompt), "Enter the password for '%s': ", username) <= 0) {
             errno = EINVAL;
