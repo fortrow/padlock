@@ -21,6 +21,8 @@ Padlock is meant to be the local keystore layer for Hardcode authentication and 
 
 The installer script auto-detects `apt-get` or `dnf` and installs the matching build dependencies before building and loading Padlock.
 On AWS Linux, use `./install.sh --aws-linux` to enable the arm64-safe kernel guard build path.
+Use `--user <name>` to add a specific user to the `tss` group.
+Use `--auth-no-prompt` with `--user <name>` to install a username-only PAM rule for that user.
 
 ### Ubuntu or Debian
 
@@ -137,6 +139,14 @@ On AWS Linux or Amazon Linux, use:
 
 That variant installs the dependencies, writes the PAM service, builds padlock, installs the binaries, adds the user to `tss`, and builds and loads the guard module using the AWS Linux compatibility path.
 
+To install Padlock for a specific user without a password prompt:
+
+```bash
+./apps/padlock/install.sh --user ryan --auth-no-prompt
+```
+
+That variant writes `/etc/pam.d/padlock` with a single `pam_succeed_if.so` rule for the chosen user, and the CLI uses that username plus the TPM-sealed secret to derive the header password without prompting for a login password.
+
 Configure and build first:
 
 ```bash
@@ -211,6 +221,14 @@ sudo chmod 0644 /etc/pam.d/padlock
 ```
 
 If your distribution already has a clean password-only PAM include that you trust, you can adapt the service to use it. Do not point `padlock` at a stack that requires smart cards or other hardware tokens unless that is explicitly what you want.
+
+If you install with `--user <name> --auth-no-prompt`, the PAM service is reduced to:
+
+```pam
+auth required pam_succeed_if.so user = <name>
+```
+
+In that mode, the CLI does not prompt for a password and derives the header password from the username instead of a login password.
 
 ### Kernel Guard
 

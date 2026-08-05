@@ -699,6 +699,45 @@ int padlock_derive_header_password(const char *login_password, char *output, siz
     return 0;
 }
 
+int padlock_derive_user_header_password(const char *username, char *output, size_t output_length)
+{
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned char hmac_key[32];
+    unsigned int digest_length = 0;
+    static const char hex[] = "0123456789abcdef";
+
+    if (username == 0 || username[0] == '\0' || output == 0 || output_length < 65u) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (padlock_tpm_ensure_sealed_key(hmac_key) != 0) {
+        return -1;
+    }
+
+    if (HMAC(
+        EVP_sha256(),
+        hmac_key,
+        (int) sizeof(hmac_key),
+        (const unsigned char *) username,
+        strlen(username),
+        digest,
+        &digest_length
+    ) == 0 || digest_length != 32u) {
+        padlock_secure_zero(hmac_key, sizeof(hmac_key));
+        return -1;
+    }
+
+    for (size_t index = 0; index < digest_length; index++) {
+        output[index * 2u] = hex[(digest[index] >> 4u) & 0x0fu];
+        output[index * 2u + 1u] = hex[digest[index] & 0x0fu];
+    }
+    output[digest_length * 2u] = '\0';
+    padlock_secure_zero(digest, sizeof(digest));
+    padlock_secure_zero(hmac_key, sizeof(hmac_key));
+    return 0;
+}
+
 int padlock_parse_size(const char *value, uint64_t *bytes)
 {
     char *end = 0;

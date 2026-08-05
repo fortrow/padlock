@@ -1,6 +1,7 @@
 #include "hardcode/padlock.h"
 
 #include <errno.h>
+#include <ctype.h>
 #include <pwd.h>
 #include <security/pam_appl.h>
 #include <stdio.h>
@@ -111,6 +112,15 @@ struct pam_password_state {
     const char *password;
 };
 
+static int pam_no_prompt_conversation(int num_msg, const struct pam_message **msg, struct pam_response **resp, void *appdata_ptr)
+{
+    (void) num_msg;
+    (void) msg;
+    (void) resp;
+    (void) appdata_ptr;
+    return PAM_CONV_ERR;
+}
+
 static int pam_password_conversation(int num_msg, const struct pam_message **msg, struct pam_response **resp, void *appdata_ptr)
 {
     struct pam_password_state *state = appdata_ptr;
@@ -156,12 +166,60 @@ static int pam_password_conversation(int num_msg, const struct pam_message **msg
     return PAM_SUCCESS;
 }
 
-static int authenticate_with_pam(const char *password, char *reason, size_t reason_length)
+static int pam_service_is_passwordless_for_user(const char *username)
+{
+    FILE *file;
+    char line[512];
+    char expected[384];
+    int expected_length;
+
+    if (username == 0 || username[0] == '\0') {
+        return 0;
+    }
+
+    file = fopen("/etc/pam.d/padlock", "r");
+    if (file == 0) {
+        return 0;
+    }
+
+    expected_length = snprintf(expected, sizeof(expected), "auth required pam_succeed_if.so user = %s", username);
+    if (expected_length <= 0 || (size_t) expected_length >= sizeof(expected)) {
+        fclose(file);
+        return 0;
+    }
+
+    while (fgets(line, sizeof(line), file) != 0) {
+        char *start = line;
+        char *end;
+
+        while (*start != '\0' && isspace((unsigned char) *start)) {
+            start++;
+        }
+
+        end = start + strlen(start);
+        while (end > start && isspace((unsigned char) end[-1])) {
+            *--end = '\0';
+        }
+
+        if (*start == '\0' || *start == '#') {
+            continue;
+        }
+
+        if (strcmp(start, expected) != 0) {
+            fclose(file);
+            return 0;
+        }
+    }
+
+    fclose(file);
+    return 1;
+}
+
+static int authenticate_with_pam(const char *username, const char *password, int no_prompt, char *reason, size_t reason_length)
 {
     struct pam_conv conv;
     struct pam_password_state state;
     pam_handle_t *pamh = 0;
-    const char *user = getenv("USER");
     struct passwd *pwd;
     int result;
 
@@ -169,26 +227,26 @@ static int authenticate_with_pam(const char *password, char *reason, size_t reas
         reason[0] = '\0';
     }
 
-    if (password == 0 || password[0] == '\0') {
-        errno = EINVAL;
-        copy_message(reason, reason_length, "empty password");
-        return -1;
-    }
-
-    if (user == 0 || user[0] == '\0') {
+    if (username == 0 || username[0] == '\0') {
         pwd = getpwuid(getuid());
         if (pwd == 0 || pwd->pw_name == 0) {
             copy_message(reason, reason_length, "could not resolve current user");
             return -1;
         }
-        user = pwd->pw_name;
+        username = pwd->pw_name;
+    }
+
+    if (!no_prompt && (password == 0 || password[0] == '\0')) {
+        errno = EINVAL;
+        copy_message(reason, reason_length, "empty password");
+        return -1;
     }
 
     state.password = password;
-    conv.conv = pam_password_conversation;
-    conv.appdata_ptr = &state;
+    conv.conv = no_prompt ? pam_no_prompt_conversation : pam_password_conversation;
+    conv.appdata_ptr = no_prompt ? 0 : &state;
 
-    result = pam_start(PADLOCK_PAM_SERVICE, user, &conv, &pamh);
+    result = pam_start(PADLOCK_PAM_SERVICE, username, &conv, &pamh);
     if (result != PAM_SUCCESS) {
         errno = EACCES;
         copy_pam_message(reason, reason_length, result, pamh);
@@ -214,28 +272,39 @@ static int derive_header_password(const char *username, char *header_password, s
     char login_password[512];
     char prompt[128];
     int result;
+    int no_prompt;
 
     if (username == 0 || username[0] == '\0') {
         username = "user";
     }
 
-    if (snprintf(prompt, sizeof(prompt), "Enter the password for '%s': ", username) <= 0) {
-        errno = EINVAL;
-        return -1;
+    no_prompt = pam_service_is_passwordless_for_user(username);
+
+    if (!no_prompt) {
+        if (snprintf(prompt, sizeof(prompt), "Enter the password for '%s': ", username) <= 0) {
+            errno = EINVAL;
+            return -1;
+        }
+
+        if (prompt_password(prompt, login_password, sizeof(login_password)) != 0) {
+            errno = EIO;
+            copy_message(reason, reason_length, "could not read password");
+            return -1;
+        }
+    } else {
+        login_password[0] = '\0';
     }
 
-    if (prompt_password(prompt, login_password, sizeof(login_password)) != 0) {
-        errno = EIO;
-        copy_message(reason, reason_length, "could not read password");
-        return -1;
-    }
-
-    if (authenticate_with_pam(login_password, reason, reason_length) != 0) {
+    if (authenticate_with_pam(username, no_prompt ? 0 : login_password, no_prompt, reason, reason_length) != 0) {
         secure_zero(login_password, sizeof(login_password));
         return -1;
     }
 
-    result = padlock_derive_header_password(login_password, header_password, header_password_length);
+    if (no_prompt) {
+        result = padlock_derive_user_header_password(username, header_password, header_password_length);
+    } else {
+        result = padlock_derive_header_password(login_password, header_password, header_password_length);
+    }
     secure_zero(login_password, sizeof(login_password));
     if (result != 0) {
         if (errno == EACCES) {

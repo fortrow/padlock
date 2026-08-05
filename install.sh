@@ -7,6 +7,8 @@ BUILD_DIR="${PADLOCK_DIR}/build"
 PAM_SERVICE="/etc/pam.d/padlock"
 TARGET_USER="${SUDO_USER:-${USER:-}}"
 AWS_LINUX=false
+AUTH_NO_PROMPT=false
+USER_EXPLICIT=false
 
 log() {
   printf '%s\n' "$*"
@@ -14,7 +16,7 @@ log() {
 
 usage() {
   cat <<'EOF'
-Usage: ./install.sh [--help] [--aws-linux]
+Usage: ./install.sh [--help] [--aws-linux] [--user <name>] [--auth-no-prompt]
 
 Installs Padlock dependencies, writes the PAM service, builds the project,
 installs the binaries, adds the current user to the tss group when possible,
@@ -22,6 +24,10 @@ and loads the kernel guard module.
 
 Use --aws-linux on Amazon Linux / AWS Linux kernels that need the arm64-safe
 kernel guard build path.
+
+Use --user <name> to set the user added to the tss group.
+Use --auth-no-prompt with --user <name> to install a PAM rule that trusts that
+specific user without prompting for a password.
 
 Dependency installation is automatic when apt-get or dnf is available.
 Set INSTALL_DEPS=0 to skip dependency installation.
@@ -42,6 +48,15 @@ require_root_or_sudo() {
 
 run_root() {
   "${SUDO[@]}" "$@"
+}
+
+validate_user_name() {
+  case "$1" in
+    ""|*[![:alnum:]_.@-]*)
+      return 1
+      ;;
+  esac
+  return 0
 }
 
 install_deps_debian() {
@@ -82,10 +97,20 @@ install_deps_fedora() {
 write_pam_service() {
   log "Installing PAM service to ${PAM_SERVICE}"
   run_root install -d -m 0755 /etc/pam.d
-  run_root tee "${PAM_SERVICE}" >/dev/null <<'EOF'
+
+  if [[ "${AUTH_NO_PROMPT}" == true ]]; then
+    if ! validate_user_name "${TARGET_USER}"; then
+      log "install.sh: --auth-no-prompt requires a valid --user <name>"
+      exit 1
+    fi
+
+    printf 'auth required pam_succeed_if.so user = %s\n' "${TARGET_USER}" | run_root tee "${PAM_SERVICE}" >/dev/null
+  else
+    run_root tee "${PAM_SERVICE}" >/dev/null <<'EOF'
 auth required pam_unix.so
 account required pam_unix.so
 EOF
+  fi
   run_root chown root:root "${PAM_SERVICE}"
   run_root chmod 0644 "${PAM_SERVICE}"
 }
@@ -136,22 +161,45 @@ ensure_tss_group_hint() {
 }
 
 main() {
-  for arg in "$@"; do
-    case "${arg}" in
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
       -h|--help)
         usage
         exit 0
         ;;
       --aws-linux)
         AWS_LINUX=true
+        shift
+        ;;
+      --user)
+        if [[ $# -lt 2 ]]; then
+          log "install.sh: --user requires a username"
+          exit 1
+        fi
+        if ! validate_user_name "$2"; then
+          log "install.sh: --user must be a valid username"
+          exit 1
+        fi
+        TARGET_USER="$2"
+        USER_EXPLICIT=true
+        shift 2
+        ;;
+      --auth-no-prompt)
+        AUTH_NO_PROMPT=true
+        shift
         ;;
       *)
-        log "install.sh: unknown argument: ${arg}"
+        log "install.sh: unknown argument: $1"
         usage
         exit 1
         ;;
     esac
   done
+
+  if [[ "${AUTH_NO_PROMPT}" == true && "${USER_EXPLICIT}" != true ]]; then
+    log "install.sh: --auth-no-prompt requires --user <name>"
+    exit 1
+  fi
 
   require_root_or_sudo
 

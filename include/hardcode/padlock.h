@@ -27,6 +27,7 @@ PADLOCK_API int padlock_allocate(const char *path, uint64_t size, const char *pa
 PADLOCK_API int padlock_set(const char *path, const char *password, const char *key, const void *value, uint32_t value_length);
 PADLOCK_API int padlock_get(const char *path, const char *password, const char *key, unsigned char **value, uint32_t *value_length);
 PADLOCK_API int padlock_derive_header_password(const char *login_password, char *output, size_t output_length);
+PADLOCK_API int padlock_derive_user_header_password(const char *username, char *output, size_t output_length);
 PADLOCK_API void padlock_free(void *value);
 
 #ifdef __cplusplus
