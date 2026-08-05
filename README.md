@@ -191,6 +191,17 @@ To stage into a package root, use `DESTDIR` with the install step:
 DESTDIR=/tmp/stage cmake --install apps/padlock/build --prefix /usr
 ```
 
+To remove a Padlock install from the machine, use:
+
+```bash
+./apps/padlock/uninstall.sh
+```
+
+That script removes the `/usr/local` install, the PAM and udev rules, the
+loaded kernel guard module if present, the known enclave disk-image
+artifacts, and the `enclave` user plus `tpmadm` group if they exist. Pass
+`--keep-build` if you want to leave the local `build/` directory in place.
+
 The install step places:
 
 - `libpadlock.so` in `/usr/lib` or `/usr/lib64`, depending on the platform
