@@ -382,13 +382,18 @@ create_disk_image() {
 allocate_store_in_disk_image() {
   local home_dir="$1"
   local store_size="$2"
+  local alloc_bin="${PADLOCK_BIN}"
 
   log "Allocating encrypted store inside disk image"
-  if [[ ! -x "${PADLOCK_BIN}" ]]; then
-    log "install.sh: expected ${PADLOCK_BIN} to exist before enclave allocation"
+  if [[ "${ENCLAVE_MODE}" == true ]]; then
+    alloc_bin="${PADLOCK_REAL_BIN}"
+  fi
+
+  if [[ ! -x "${alloc_bin}" ]]; then
+    log "install.sh: expected ${alloc_bin} to exist before enclave allocation"
     exit 1
   fi
-  run_as_user "${TARGET_USER}" env HOME="${home_dir}" PADLOCK_STORE_ROOT="${MOUNT_POINT}" "${PADLOCK_BIN}" allocate "${store_size}"
+  run_as_user "${TARGET_USER}" env HOME="${home_dir}" PADLOCK_STORE_ROOT="${MOUNT_POINT}" "${alloc_bin}" allocate "${store_size}"
 }
 
 lock_disk_image() {
