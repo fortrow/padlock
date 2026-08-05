@@ -158,15 +158,15 @@ DESTDIR=/tmp/stage cmake --install apps/padlock/build --prefix /usr
 
 The install step places:
 
-- `libpadlock.so` in `/usr/lib`
-- `libpadlock.a` in `/usr/lib`
+- `libpadlock.so` in `/usr/lib` or `/usr/lib64`, depending on the platform
+- `libpadlock.a` in `/usr/lib` or `/usr/lib64`, depending on the platform
 - `padlock` in `/usr/bin`
 - `hardcode/padlock.h` in `/usr/include/hardcode`
 - `hardcode/padlock_guard.h` in `/usr/include/hardcode`
 
 The installed `padlock` binary is configured to find `libpadlock.so.0` in the
-matching sibling `lib` directory for the chosen prefix, so you should not need
-to set `LD_LIBRARY_PATH` manually.
+matching sibling `lib` or `lib64` directory for the chosen prefix, so you
+should not need to set `LD_LIBRARY_PATH` manually.
 
 ### Runtime Setup
 
