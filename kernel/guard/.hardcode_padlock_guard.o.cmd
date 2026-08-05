@@ -4,6 +4,8 @@ source_hardcode_padlock_guard.o := hardcode_padlock_guard.c
 
 deps_hardcode_padlock_guard.o := \
     $(wildcard include/config/SECURITY_PATH) \
+    $(wildcard include/config/ARM64) \
+    $(wildcard include/config/X86_64) \
   /usr/src/linux-headers-7.0.0-28-generic/include/linux/compiler-version.h \
     $(wildcard include/config/CC_VERSION_TEXT) \
   /usr/src/linux-headers-7.0.0-28-generic/include/linux/kconfig.h \
@@ -15,8 +17,6 @@ deps_hardcode_padlock_guard.o := \
     $(wildcard include/config/PAHOLE_HAS_BTF_TAG) \
     $(wildcard include/config/FUNCTION_ALIGNMENT) \
     $(wildcard include/config/CC_HAS_SANE_FUNCTION_ALIGNMENT) \
-    $(wildcard include/config/X86_64) \
-    $(wildcard include/config/ARM64) \
     $(wildcard include/config/LD_DEAD_CODE_DATA_ELIMINATION) \
     $(wildcard include/config/LTO_CLANG) \
     $(wildcard include/config/HAVE_ARCH_COMPILER_H) \

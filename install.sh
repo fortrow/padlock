@@ -6,6 +6,7 @@ PADLOCK_DIR="${ROOT_DIR}"
 BUILD_DIR="${PADLOCK_DIR}/build"
 PAM_SERVICE="/etc/pam.d/padlock"
 TARGET_USER="${SUDO_USER:-${USER:-}}"
+AWS_LINUX=false
 
 log() {
   printf '%s\n' "$*"
@@ -13,11 +14,14 @@ log() {
 
 usage() {
   cat <<'EOF'
-Usage: ./install.sh [--help]
+Usage: ./install.sh [--help] [--aws-linux]
 
 Installs Padlock dependencies, writes the PAM service, builds the project,
 installs the binaries, adds the current user to the tss group when possible,
 and loads the kernel guard module.
+
+Use --aws-linux on Amazon Linux / AWS Linux kernels that need the arm64-safe
+kernel guard build path.
 
 Dependency installation is automatic when apt-get or dnf is available.
 Set INSTALL_DEPS=0 to skip dependency installation.
@@ -131,10 +135,22 @@ ensure_tss_group_hint() {
 }
 
 main() {
-  if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then
-    usage
-    exit 0
-  fi
+  for arg in "$@"; do
+    case "${arg}" in
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      --aws-linux)
+        AWS_LINUX=true
+        ;;
+      *)
+        log "install.sh: unknown argument: ${arg}"
+        usage
+        exit 1
+        ;;
+    esac
+  done
 
   require_root_or_sudo
 
@@ -170,6 +186,9 @@ main() {
   write_pam_service
   build_padlock
   install_padlock
+  if [[ "${AWS_LINUX}" == true ]]; then
+    log "Building kernel guard module with AWS Linux compatibility enabled"
+  fi
   build_guard
   load_guard
   ensure_tss_group_hint

@@ -170,7 +170,22 @@ static bool padlock_guard_deny_dentry(struct dentry *dentry)
 
 static unsigned long padlock_guard_kprobe_return_address(struct pt_regs *regs)
 {
-    return regs_get_kernel_stack_nth(regs, 0);
+#if defined(__aarch64__) || defined(CONFIG_ARM64)
+    /*
+     * On arm64, a function entry kprobe still sees the caller's return
+     * address in x30/lr, which is the address we want to resume at after
+     * forcing -EPERM.
+     */
+    return regs->regs[30];
+#elif defined(__x86_64__) || defined(CONFIG_X86_64)
+    /*
+     * On x86_64, the return address lives at the top of the kernel stack
+     * when the probed function is entered.
+     */
+    return *(unsigned long *) regs->sp;
+#else
+#error "Padlock guard kprobe return-address handling is not implemented for this architecture"
+#endif
 }
 
 static int padlock_guard_kprobe_deny(struct kprobe *p, struct pt_regs *regs)

@@ -20,6 +20,7 @@ Padlock is meant to be the local keystore layer for Hardcode authentication and 
 ## Install
 
 The installer script auto-detects `apt-get` or `dnf` and installs the matching build dependencies before building and loading Padlock.
+On AWS Linux, use `./install.sh --aws-linux` to enable the arm64-safe kernel guard build path.
 
 ### Ubuntu or Debian
 
@@ -127,6 +128,14 @@ Preferred setup for a fresh machine:
 ```
 
 That script installs the dependencies, writes the PAM service, builds padlock, installs the binaries, adds the user to `tss`, and loads the guard module.
+
+On AWS Linux or Amazon Linux, use:
+
+```bash
+./apps/padlock/install.sh --aws-linux
+```
+
+That variant installs the dependencies, writes the PAM service, builds padlock, installs the binaries, adds the user to `tss`, and builds and loads the guard module using the AWS Linux compatibility path.
 
 Configure and build first:
 

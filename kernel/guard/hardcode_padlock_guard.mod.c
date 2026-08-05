@@ -32,7 +32,6 @@ __used __section("__versions") = {
 	{ 0xd70733be, "sized_strscpy" },
 	{ 0xe54e0a6b, "__fortify_panic" },
 	{ 0xe4de56b4, "__ubsan_handle_load_invalid_value" },
-	{ 0x1b60315e, "copy_from_kernel_nofault" },
 	{ 0x31ea07ad, "module_put" },
 	{ 0x7ed256c3, "noop_llseek" },
 	{ 0xd272d446, "__fentry__" },
@@ -67,7 +66,6 @@ __used __section("__version_ext_crcs") = {
 	0xd70733be,
 	0xe54e0a6b,
 	0xe4de56b4,
-	0x1b60315e,
 	0x31ea07ad,
 	0x7ed256c3,
 	0xd272d446,
@@ -101,7 +99,6 @@ __used __section("__version_ext_names") =
 	"sized_strscpy\0"
 	"__fortify_panic\0"
 	"__ubsan_handle_load_invalid_value\0"
-	"copy_from_kernel_nofault\0"
 	"module_put\0"
 	"noop_llseek\0"
 	"__fentry__\0"
@@ -123,4 +120,4 @@ __used __section("__version_ext_names") =
 MODULE_INFO(depends, "");
 
 
-MODULE_INFO(srcversion, "1483D59A532A4126E7F8044");
+MODULE_INFO(srcversion, "6086DCC589D8A518C87514D");
