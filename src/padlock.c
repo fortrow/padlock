@@ -776,9 +776,20 @@ int padlock_parse_size(const char *value, uint64_t *bytes)
 int padlock_default_store_path(char *buffer, size_t buffer_length)
 {
     const char *home = getenv("HOME");
+    const char *store_root = getenv("PADLOCK_STORE_ROOT");
     int written;
 
-    if (home == 0 || buffer == 0 || buffer_length == 0) {
+    if (buffer == 0 || buffer_length == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (store_root != 0 && store_root[0] != '\0') {
+        written = snprintf(buffer, buffer_length, "%s/store.plk", store_root);
+        return written > 0 && (size_t) written < buffer_length ? 0 : -1;
+    }
+
+    if (home == 0) {
         errno = EINVAL;
         return -1;
     }

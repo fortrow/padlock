@@ -5,6 +5,8 @@ Padlock is a Linux keystore. It stores a hidden append-only key/value file in ea
 ## What It Does
 
 - Creates a fixed-size store file, for example `~/.padlock/store.plk`.
+- Can also place the encrypted `store.plk` inside a mounted disk image, for
+  example `/enclave/keystore/store.plk`.
 - Fills unused space with random bytes.
 - Encrypts the store data with AES-256-XTS.
 - Seals a helper secret through TPM data in `~/.padlock/tpm/`; that helper is used to derive the header password, which protects the store key.
@@ -21,8 +23,14 @@ Padlock is meant to be the local keystore layer for Hardcode authentication and 
 
 The installer script auto-detects `apt-get` or `dnf` and installs the matching build dependencies before building and loading Padlock.
 On AWS Linux, use `./install.sh --aws-linux` to enable the arm64-safe kernel guard build path.
-Use `--user <name>` to add a specific user to the `tss` group.
-Use `--auth-no-prompt` with `--user <name>` to install a username-only PAM rule for that user.
+Use `--user <name>` to add a specific user to the `tpmadm` group.
+Use `--auth-no-prompt` with `--user <name>` to install a `pam_succeed_if.so`
+rule that trusts that specific user without prompting for a password.
+Use `--disk-img` to back the keystore with a root-owned, immutable `disk.img`
+that is mounted through `/etc/fstab` with `nodev,nosuid,noexec`.
+Use `--enclave <size>` to create the `enclave` user, build Padlock for the
+enclave workflow, and allocate an encrypted keystore of the requested size
+inside `/enclave/keystore`.
 
 ### Ubuntu or Debian
 
@@ -41,7 +49,7 @@ sudo apt-get install -y build-essential cmake libssl-dev libpam0g-dev linux-head
 - `libtss2-esys-3.0.2-0t64`, `libtss2-mu-4.0.1-0t64`, `libtss2-tctildr0t64`, and `libtss2-tcti-device0t64` provide the TPM2 runtime libraries used by the direct ESAPI path.
 - `linux-headers-$(uname -r)` provides the headers needed to build the guard module.
 - The machine needs access to `/dev/tpmrm0` or `/dev/tpm0`.
-- The user running `padlock` must have access to the `tss` group on the active session.
+- The user running `padlock` must have access to the `tpmadm` group on the active session.
 
 ### Fedora
 
@@ -59,7 +67,7 @@ Notes:
 - `kernel-devel` provides the headers needed to build the guard module.
 - `kmod` provides `insmod`, `lsmod`, and `rmmod` if they are not already present.
 - The machine needs access to `/dev/tpmrm0` or `/dev/tpm0`.
-- The user running `padlock` must have access to the `tss` group on the active session.
+- The user running `padlock` must have access to the `tpmadm` group on the active session.
 
 ## Build
 
@@ -129,7 +137,7 @@ Preferred setup for a fresh machine:
 ./apps/padlock/install.sh
 ```
 
-That script installs the dependencies, writes the PAM service, builds padlock, installs the binaries, adds the user to `tss`, and loads the guard module.
+That script installs the dependencies, writes the PAM service, builds Padlock, installs the binaries, adds the user to `tpmadm`, and loads the guard module.
 
 On AWS Linux or Amazon Linux, use:
 
@@ -137,7 +145,7 @@ On AWS Linux or Amazon Linux, use:
 ./apps/padlock/install.sh --aws-linux
 ```
 
-That variant installs the dependencies, writes the PAM service, builds padlock, installs the binaries, adds the user to `tss`, and builds and loads the guard module using the AWS Linux compatibility path.
+That variant installs the dependencies, writes the PAM service, builds Padlock, installs the binaries, adds the user to `tpmadm`, and builds and loads the guard module using the AWS Linux compatibility path.
 
 To install Padlock for a specific user without a password prompt:
 
@@ -145,7 +153,20 @@ To install Padlock for a specific user without a password prompt:
 ./apps/padlock/install.sh --user ryan --auth-no-prompt
 ```
 
-That variant writes `/etc/pam.d/padlock` with a single `pam_succeed_if.so` rule for the chosen user, and the CLI uses that username plus the TPM-sealed secret to derive the header password without prompting for a login password.
+That variant writes `/etc/pam.d/padlock` with a single `pam_succeed_if.so`
+rule for the chosen user. Run `padlock` as that same OS user.
+
+To create the enclave user and a disk-backed keystore in one step:
+
+```bash
+./apps/padlock/install.sh --aws-linux --enclave 2G
+```
+
+That mode creates a system user named `enclave` with home directory
+`/enclave`, installs Padlock with `--user enclave --auth-no-prompt
+--disk-img`, creates a root-owned immutable `disk.img`, mounts it at
+`/enclave/keystore`, allocates the encrypted `store.plk`, and installs a
+wrapper that runs `padlock get` and `padlock set` through `sudo -u enclave`.
 
 Configure and build first:
 
@@ -183,16 +204,20 @@ should not need to set `LD_LIBRARY_PATH` manually.
 #### TPM device access
 
 The TPM helper path opens `/dev/tpmrm0` first and falls back to `/dev/tpm0`.
-On Ubuntu and Debian systems those devices are typically owned by `tss`, so add the user to that group:
+The installer writes a udev rule at `/etc/udev/rules.d/60-padlock-tpm.rules`
+that keeps TPM devices at `0660` with owner `tss` and group `tpmadm`. It also
+adds the current user, and any members of the `root` group, to `tpmadm`. Add a
+specific user to that group manually if you want:
 
 ```bash
-sudo usermod -aG tss ryan
+sudo usermod -aG tpmadm ryan
 ```
 
-The new group membership does not apply to an existing shell session. Log out and log back in, or start a fresh session with:
+The new group membership does not apply to an existing shell session. Log out
+and log back in, or start a fresh session with:
 
 ```bash
-newgrp tss
+newgrp tpmadm
 ```
 
 You can verify access with:
@@ -228,7 +253,37 @@ If you install with `--user <name> --auth-no-prompt`, the PAM service is reduced
 auth required pam_succeed_if.so user = <name>
 ```
 
-In that mode, the CLI does not prompt for a password and derives the header password from the username instead of a login password.
+In that mode, the CLI does not prompt for a password and derives the header
+password without prompting for a login password.
+
+#### Disk image mode
+
+When you install with `--disk-img`, Padlock stores the encrypted `store.plk`
+inside a mounted loop device instead of directly under the user home
+directory. The installer:
+
+- creates `disk.img` under the target user's `.padlock/` directory
+- formats it as ext4
+- writes an `/etc/fstab` entry that does not use the `user` option, so only
+  root can mount it
+- mounts it with `nodev,nosuid,noexec`
+- sets the backing file to `root:root`, `0600`, and immutable with `chattr +i`
+
+The mounted keystore directory is the path used by Padlock at runtime, for
+example `/enclave/keystore`.
+
+#### Enclave mode
+
+When you install with `--enclave <size>`, the installer combines the disk image
+mode with the enclave user workflow:
+
+- creates the `enclave` system user with home `/enclave` and shell
+  `/sbin/nologin`
+- builds and installs Padlock for `--user enclave --auth-no-prompt --disk-img`
+- allocates the encrypted `store.plk` as `enclave`
+- installs a `padlock` wrapper that only supports `get` and `set`
+- prepends `sudo -u enclave` before the real binary so regular sudo
+  authentication is used to become `enclave`
 
 ### Kernel Guard
 
@@ -278,13 +333,17 @@ The command prompts once for the Linux password, authenticates it with PAM, deri
 ## Files It Creates
 
 - `~/.padlock/store.plk` - encrypted keystore file
+- `/enclave/keystore/store.plk` - encrypted keystore file when installed with
+  `--enclave`
+- `~/.padlock/disk.img` - loop-backed disk image when installed with
+  `--disk-img`
 - `~/.padlock/tpm/header-hmac.pub` - TPM public blob for the sealed secret
 - `~/.padlock/tpm/header-hmac.priv` - TPM private blob for the sealed secret
 
 ## Common Setup Problems
 
 - `padlock: authentication: Permission denied` usually means the PAM stack is not password-only, or the typed password was rejected by the active PAM policy.
-- `TPM access denied while deriving header password` usually means the active session is not in the `tss` group yet.
+- `TPM access denied while deriving header password` usually means the active session is not in the `tpmadm` group yet.
 - `Esys_Create() ... inconsistent attributes` means the TPM object template is wrong; this was fixed by removing the caller-incompatible `SENSITIVEDATAORIGIN` attribute from the sealed object template.
 - If `command -v padlock` shows `/usr/local/bin/padlock`, make sure you installed the updated binary there as well as under `/usr/bin`, or call the binary explicitly by path.
 
@@ -292,7 +351,7 @@ The command prompts once for the Linux password, authenticates it with PAM, deri
 
 This is a working prototype, not a finished security product. The remaining work is:
 
-- Define rotation and backup behavior for the sealed secret blobs and the store file.
+- Define rotation and backup behavior for the sealed secret blobs, the store file, and any backing disk image.
 - Add corruption detection and recovery for truncated or partially-written stores.
 - Add a real policy for key deletion, record compaction, and store growth.
 - Add a service wrapper or helper for boot-time store mount/unseal if you want the file loaded before the first lookup.

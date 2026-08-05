@@ -271,8 +271,8 @@ static int derive_header_password(const char *username, char *header_password, s
 {
     char login_password[512];
     char prompt[128];
-    int result;
     int no_prompt;
+    int result;
 
     if (username == 0 || username[0] == '\0') {
         username = "user";
@@ -346,16 +346,16 @@ int main(int argc, char **argv)
     char path[4096];
     char header_password[65];
     char auth_error[256];
-    const char *username = getenv("USER");
+    const char *username;
     struct passwd *pwd;
     int result;
 
-    if (username == 0 || username[0] == '\0') {
-        pwd = getpwuid(getuid());
-        if (pwd != 0 && pwd->pw_name != 0) {
-            username = pwd->pw_name;
-        }
+    pwd = getpwuid(getuid());
+    if (pwd == 0 || pwd->pw_name == 0) {
+        fprintf(stderr, "padlock: could not resolve current user\n");
+        return 1;
     }
+    username = pwd->pw_name;
 
     if (argc < 2) {
         usage(stderr);
