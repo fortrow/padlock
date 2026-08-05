@@ -16,10 +16,10 @@ set(PADLOCK_TPM_INCLUDE_DIR ${PADLOCK_SOURCE_DIR}/third_party/tpm2-tss/include)
 set(PADLOCK_KERNEL_DIR ${PADLOCK_SOURCE_DIR}/kernel/guard)
 execute_process(COMMAND uname -r OUTPUT_VARIABLE PADLOCK_KERNEL_RELEASE OUTPUT_STRIP_TRAILING_WHITESPACE)
 set(PADLOCK_KERNEL_BUILD /lib/modules/${PADLOCK_KERNEL_RELEASE}/build)
-set(TSS2_ESYS_LIB /usr/lib/x86_64-linux-gnu/libtss2-esys.so.0)
-set(TSS2_MU_LIB /usr/lib/x86_64-linux-gnu/libtss2-mu.so.0)
-set(TSS2_TCTILDR_LIB /usr/lib/x86_64-linux-gnu/libtss2-tctildr.so.0)
-set(TSS2_TCTI_DEVICE_LIB /usr/lib/x86_64-linux-gnu/libtss2-tcti-device.so.0)
+set(TSS2_ESYS_LIB tss2-esys)
+set(TSS2_MU_LIB tss2-mu)
+set(TSS2_TCTILDR_LIB tss2-tctildr)
+set(TSS2_TCTI_DEVICE_LIB tss2-tcti-device)
 
 add_library(padlock_shared SHARED
     src/padlock.c

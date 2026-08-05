@@ -19,6 +19,8 @@ Padlock is meant to be the local keystore layer for Hardcode authentication and 
 
 ## Install
 
+The installer script auto-detects `apt-get` or `dnf` and installs the matching build dependencies before building and loading Padlock.
+
 ### Ubuntu or Debian
 
 ```bash
@@ -35,6 +37,24 @@ sudo apt-get install -y build-essential cmake libssl-dev libpam0g-dev linux-head
 - `libpam0g-dev` provides the PAM headers used to validate the login password.
 - `libtss2-esys-3.0.2-0t64`, `libtss2-mu-4.0.1-0t64`, `libtss2-tctildr0t64`, and `libtss2-tcti-device0t64` provide the TPM2 runtime libraries used by the direct ESAPI path.
 - `linux-headers-$(uname -r)` provides the headers needed to build the guard module.
+- The machine needs access to `/dev/tpmrm0` or `/dev/tpm0`.
+- The user running `padlock` must have access to the `tss` group on the active session.
+
+### Fedora
+
+```bash
+sudo dnf install -y gcc make cmake openssl-devel pam-devel kernel-devel kmod tpm2-tss-devel
+```
+
+Notes:
+
+- `gcc` and `make` provide the C toolchain and build driver.
+- `cmake` provides the project generator and build orchestration.
+- `openssl-devel` provides the OpenSSL headers and libraries used for AES and HMAC/KDF work.
+- `pam-devel` provides the PAM headers used to validate the login password.
+- `tpm2-tss-devel` provides the TPM2 headers and libraries used by the direct ESAPI path.
+- `kernel-devel` provides the headers needed to build the guard module.
+- `kmod` provides `insmod`, `lsmod`, and `rmmod` if they are not already present.
 - The machine needs access to `/dev/tpmrm0` or `/dev/tpm0`.
 - The user running `padlock` must have access to the `tss` group on the active session.
 

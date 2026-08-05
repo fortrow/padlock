@@ -11,6 +11,19 @@ log() {
   printf '%s\n' "$*"
 }
 
+usage() {
+  cat <<'EOF'
+Usage: ./install.sh [--help]
+
+Installs Padlock dependencies, writes the PAM service, builds the project,
+installs the binaries, adds the current user to the tss group when possible,
+and loads the kernel guard module.
+
+Dependency installation is automatic when apt-get or dnf is available.
+Set INSTALL_DEPS=0 to skip dependency installation.
+EOF
+}
+
 require_root_or_sudo() {
   if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
     SUDO=()
@@ -44,6 +57,22 @@ install_deps_debian() {
   log "Installing dependencies with apt-get"
   run_root apt-get update
   run_root apt-get install -y "${packages[@]}"
+}
+
+install_deps_fedora() {
+  local packages=(
+    gcc
+    make
+    cmake
+    kmod
+    openssl-devel
+    pam-devel
+    kernel-devel
+    tpm2-tss-devel
+  )
+
+  log "Installing dependencies with dnf"
+  run_root dnf install -y "${packages[@]}"
 }
 
 write_pam_service() {
@@ -102,21 +131,30 @@ ensure_tss_group_hint() {
 }
 
 main() {
+  if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then
+    usage
+    exit 0
+  fi
+
   require_root_or_sudo
 
   case "${INSTALL_DEPS:-auto}" in
     auto)
-      if [[ -x /usr/bin/apt-get ]]; then
+      if command -v apt-get >/dev/null 2>&1; then
         install_deps_debian
+      elif command -v dnf >/dev/null 2>&1; then
+        install_deps_fedora
       else
-        log "Skipping dependency install: apt-get not found"
+        log "Skipping dependency install: no supported package manager found"
       fi
       ;;
     1|true|yes)
-      if [[ -x /usr/bin/apt-get ]]; then
+      if command -v apt-get >/dev/null 2>&1; then
         install_deps_debian
+      elif command -v dnf >/dev/null 2>&1; then
+        install_deps_fedora
       else
-        log "install.sh: INSTALL_DEPS requested but apt-get is unavailable"
+        log "install.sh: INSTALL_DEPS requested but no supported package manager is available"
         exit 1
       fi
       ;;
