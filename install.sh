@@ -491,12 +491,18 @@ setup_disk_image_keystore() {
   local home_dir="$1"
   local store_size="$2"
   local store_size_bytes
+  local image_dir
 
   store_size_bytes="$(size_to_bytes "${store_size}")"
+  image_dir="$(dirname "${DISK_IMAGE_PATH}")"
   create_disk_image "${home_dir}" "${store_size_bytes}"
+  run_root chown "${TARGET_USER}:${TARGET_USER}" "${image_dir}"
+  run_root chmod 0700 "${image_dir}"
   run_root chown "${TARGET_USER}:${TARGET_USER}" "${MOUNT_POINT}"
   run_root chmod 0700 "${MOUNT_POINT}"
   allocate_store_in_disk_image "${home_dir}" "${store_size}"
+  run_root chown "${TARGET_USER}:${TARGET_USER}" "${image_dir}"
+  run_root chmod 0700 "${image_dir}"
   run_root chown "${TARGET_USER}:${TARGET_USER}" "${MOUNT_POINT}"
   run_root chmod 0700 "${MOUNT_POINT}"
   lock_disk_image
