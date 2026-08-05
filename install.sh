@@ -384,7 +384,11 @@ allocate_store_in_disk_image() {
   local store_size="$2"
 
   log "Allocating encrypted store inside disk image"
-  run_as_user "${TARGET_USER}" env HOME="${home_dir}" PADLOCK_STORE_ROOT="${MOUNT_POINT}" "${BUILD_DIR}/padlock" allocate "${store_size}"
+  if [[ ! -x "${PADLOCK_BIN}" ]]; then
+    log "install.sh: expected ${PADLOCK_BIN} to exist before enclave allocation"
+    exit 1
+  fi
+  run_as_user "${TARGET_USER}" env HOME="${home_dir}" PADLOCK_STORE_ROOT="${MOUNT_POINT}" "${PADLOCK_BIN}" allocate "${store_size}"
 }
 
 lock_disk_image() {
@@ -441,8 +445,10 @@ EOF
 setup_disk_image_keystore() {
   local home_dir="$1"
   local store_size="$2"
+  local store_size_bytes
 
-  create_disk_image "${home_dir}" "${store_size}"
+  store_size_bytes="$(size_to_bytes "${store_size}")"
+  create_disk_image "${home_dir}" "${store_size_bytes}"
   run_root chown "${TARGET_USER}:${TARGET_USER}" "${MOUNT_POINT}"
   run_root chmod 0700 "${MOUNT_POINT}"
   allocate_store_in_disk_image "${home_dir}" "${store_size}"
@@ -488,13 +494,14 @@ main() {
           log "install.sh: --enclave requires a size"
           exit 1
         fi
-        if ! size_to_bytes "$2" >/dev/null 2>&1; then
+        if ! ENCLAVE_SIZE_BYTES="$(size_to_bytes "$2")"; then
           log "install.sh: --enclave size must be a number with optional K, M, G, or T suffix"
           exit 1
         fi
         ENCLAVE_MODE=true
         DISK_IMAGE=true
         ENCLAVE_SIZE_INPUT="$2"
+        ENCLAVE_SIZE_BYTES="${ENCLAVE_SIZE_BYTES}"
         AWS_LINUX=true
         AUTH_NO_PROMPT=true
         TARGET_USER="enclave"
