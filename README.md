@@ -36,6 +36,7 @@ sudo apt-get install -y build-essential cmake libssl-dev libpam0g-dev linux-head
 - `libtss2-esys-3.0.2-0t64`, `libtss2-mu-4.0.1-0t64`, `libtss2-tctildr0t64`, and `libtss2-tcti-device0t64` provide the TPM2 runtime libraries used by the direct ESAPI path.
 - `linux-headers-$(uname -r)` provides the headers needed to build the guard module.
 - The machine needs access to `/dev/tpmrm0` or `/dev/tpm0`.
+- The user running `padlock` must have access to the `tss` group on the active session.
 
 ## Build
 
@@ -60,6 +61,29 @@ This produces:
 
 - `apps/padlock/kernel/guard/hardcode_padlock_guard.ko`
 
+### Load the kernel guard module
+
+The build target leaves the module in the source tree. Load it directly with `insmod`:
+
+```bash
+sudo insmod apps/padlock/kernel/guard/hardcode_padlock_guard.ko
+```
+
+Verify that it loaded and created the device node:
+
+```bash
+lsmod | rg hardcode_padlock_guard
+ls -l /dev/hardcode_padlock_guard
+```
+
+To unload it:
+
+```bash
+sudo rmmod hardcode_padlock_guard
+```
+
+`modprobe hardcode_padlock_guard` only works after the module has been installed into `/lib/modules/$(uname -r)` and `depmod -a` has been run. If you are testing from a build tree, use `insmod` against the built `.ko` file.
+
 ## Test
 
 ```bash
@@ -76,19 +100,84 @@ The test suite exercises:
 
 ## Install
 
+Preferred setup for a fresh machine:
+
 ```bash
-cmake --install apps/padlock/build
+./apps/padlock/install.sh
 ```
 
-Use `PREFIX=/usr` or `DESTDIR=/tmp/stage` if you want to stage installation.
+That script installs the dependencies, writes the PAM service, builds padlock, installs the binaries, adds the user to `tss`, and loads the guard module.
+
+Configure and build first:
+
+```bash
+cmake -S apps/padlock -B apps/padlock/build
+cmake --build apps/padlock/build
+```
+
+Then install with an explicit prefix:
+
+```bash
+cmake --install apps/padlock/build --prefix /usr
+```
+
+To stage into a package root, use `DESTDIR` with the install step:
+
+```bash
+DESTDIR=/tmp/stage cmake --install apps/padlock/build --prefix /usr
+```
 
 The install step places:
 
-- `libpadlock.so` in `$(PREFIX)/lib`
-- `libpadlock.a` in `$(PREFIX)/lib`
-- `padlock` in `$(PREFIX)/bin`
-- `hardcode/padlock.h` in `$(PREFIX)/include/hardcode`
-- `hardcode/padlock_guard.h` in `$(PREFIX)/include/hardcode`
+- `libpadlock.so` in `/usr/lib`
+- `libpadlock.a` in `/usr/lib`
+- `padlock` in `/usr/bin`
+- `hardcode/padlock.h` in `/usr/include/hardcode`
+- `hardcode/padlock_guard.h` in `/usr/include/hardcode`
+
+### Runtime Setup
+
+#### TPM device access
+
+The TPM helper path opens `/dev/tpmrm0` first and falls back to `/dev/tpm0`.
+On Ubuntu and Debian systems those devices are typically owned by `tss`, so add the user to that group:
+
+```bash
+sudo usermod -aG tss ryan
+```
+
+The new group membership does not apply to an existing shell session. Log out and log back in, or start a fresh session with:
+
+```bash
+newgrp tss
+```
+
+You can verify access with:
+
+```bash
+id
+ls -l /dev/tpmrm0 /dev/tpm0
+```
+
+#### PAM service
+
+The `padlock` CLI should use a dedicated PAM service named `padlock` with a password-only stack. This avoids inheriting the host `common-auth` stack, which can pull in modules such as `pam_pkcs11` and block password verification even when the Unix password is correct.
+
+Create `/etc/pam.d/padlock` with:
+
+```pam
+auth required pam_unix.so
+account required pam_unix.so
+```
+
+Make sure the file is readable by the CLI at runtime:
+
+```bash
+sudo chown root:root /etc/pam.d/padlock
+sudo chmod 0644 /etc/pam.d/padlock
+```
+
+If your distribution already has a clean password-only PAM include that you trust, you can adapt the service to use it. Do not point `padlock` at a stack that requires smart cards or other hardware tokens unless that is explicitly what you want.
 
 ### Kernel Guard
 
@@ -140,6 +229,13 @@ The command prompts once for the Linux password, authenticates it with PAM, deri
 - `~/.padlock/store.plk` - encrypted keystore file
 - `~/.padlock/tpm/header-hmac.pub` - TPM public blob for the sealed secret
 - `~/.padlock/tpm/header-hmac.priv` - TPM private blob for the sealed secret
+
+## Common Setup Problems
+
+- `padlock: authentication: Permission denied` usually means the PAM stack is not password-only, or the typed password was rejected by the active PAM policy.
+- `TPM access denied while deriving header password` usually means the active session is not in the `tss` group yet.
+- `Esys_Create() ... inconsistent attributes` means the TPM object template is wrong; this was fixed by removing the caller-incompatible `SENSITIVEDATAORIGIN` attribute from the sealed object template.
+- If `command -v padlock` shows `/usr/local/bin/padlock`, make sure you installed the updated binary there as well as under `/usr/bin`, or call the binary explicitly by path.
 
 ## Remaining Work
 

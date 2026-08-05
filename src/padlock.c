@@ -176,17 +176,24 @@ static int padlock_tpm_connect(ESYS_CONTEXT **esys, TSS2_TCTI_CONTEXT **tcti)
     *tcti = 0;
     *esys = 0;
 
+    if (access("/dev/tpmrm0", R_OK | W_OK) != 0 && access("/dev/tpm0", R_OK | W_OK) != 0) {
+        errno = EACCES;
+        return -1;
+    }
+
     rc = Tss2_TctiLdr_Initialize("device:/dev/tpmrm0", tcti);
     if (rc != TSS2_RC_SUCCESS) {
         rc = Tss2_TctiLdr_Initialize("device:/dev/tpm0", tcti);
     }
     if (rc != TSS2_RC_SUCCESS) {
+        errno = EIO;
         padlock_tpm_free_tcti(tcti);
         return -1;
     }
 
     rc = Esys_Initialize(esys, *tcti, &abi);
     if (rc != TSS2_RC_SUCCESS) {
+        errno = EIO;
         padlock_tpm_free_tcti(tcti);
         *esys = 0;
         return -1;
@@ -322,8 +329,7 @@ static int padlock_tpm_build_seal_template(TPM2B_SENSITIVE_CREATE *in_sensitive,
     public_template->publicArea.objectAttributes =
         TPMA_OBJECT_USERWITHAUTH
         | TPMA_OBJECT_FIXEDTPM
-        | TPMA_OBJECT_FIXEDPARENT
-        | TPMA_OBJECT_SENSITIVEDATAORIGIN;
+        | TPMA_OBJECT_FIXEDPARENT;
     public_template->publicArea.parameters.keyedHashDetail.scheme.scheme = TPM2_ALG_NULL;
     public_template->publicArea.unique.keyedHash.size = 0;
     public_template->size = 0;
@@ -582,6 +588,7 @@ static int padlock_tpm_ensure_sealed_key(unsigned char key[32])
     int result = -1;
 
     if (padlock_tpm_paths(directory, sizeof(directory), public_path, sizeof(public_path), private_path, sizeof(private_path)) != 0) {
+        errno = ENAMETOOLONG;
         return -1;
     }
     if (ensure_directory_tree(directory) != 0) {
@@ -661,6 +668,7 @@ int padlock_derive_header_password(const char *login_password, char *output, siz
     static const char hex[] = "0123456789abcdef";
 
     if (login_password == 0 || login_password[0] == '\0' || output == 0 || output_length < 65u) {
+        errno = EINVAL;
         return -1;
     }
 
@@ -698,6 +706,7 @@ int padlock_parse_size(const char *value, uint64_t *bytes)
     uint64_t multiplier = 1u;
 
     if (value == 0 || bytes == 0 || value[0] == '\0') {
+        errno = EINVAL;
         return -1;
     }
 
@@ -731,6 +740,7 @@ int padlock_default_store_path(char *buffer, size_t buffer_length)
     int written;
 
     if (home == 0 || buffer == 0 || buffer_length == 0) {
+        errno = EINVAL;
         return -1;
     }
 

@@ -1,5 +1,6 @@
 #include "hardcode/padlock.h"
 
+#include <errno.h>
 #include <pwd.h>
 #include <security/pam_appl.h>
 #include <stdio.h>
@@ -7,6 +8,8 @@
 #include <string.h>
 #include <termios.h>
 #include <unistd.h>
+
+#define PADLOCK_PAM_SERVICE "padlock"
 
 static void usage(FILE *stream)
 {
@@ -44,7 +47,7 @@ static int prompt_password(const char *prompt, char *password, size_t password_l
         terminal_changed = tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_terminal) == 0;
     }
 
-    if (fgets(password, sizeof(password), stdin) == 0) {
+    if (fgets(password, (int) password_length, stdin) == 0) {
         if (terminal_changed) {
             tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_terminal);
         }
@@ -71,6 +74,37 @@ static void secure_zero(char *buffer, size_t length)
         *bytes++ = '\0';
         length--;
     }
+}
+
+static void copy_message(char *buffer, size_t length, const char *message)
+{
+    if (buffer == 0 || length == 0) {
+        return;
+    }
+
+    if (message == 0) {
+        buffer[0] = '\0';
+        return;
+    }
+
+    snprintf(buffer, length, "%s", message);
+}
+
+static void copy_pam_message(char *buffer, size_t length, int pam_code, pam_handle_t *pamh)
+{
+    const char *message;
+
+    if (buffer == 0 || length == 0) {
+        return;
+    }
+
+    message = pam_strerror(pamh, pam_code);
+    if (message == 0 || message[0] == '\0') {
+        snprintf(buffer, length, "PAM %d", pam_code);
+        return;
+    }
+
+    snprintf(buffer, length, "PAM %d: %s", pam_code, message);
 }
 
 struct pam_password_state {
@@ -122,7 +156,7 @@ static int pam_password_conversation(int num_msg, const struct pam_message **msg
     return PAM_SUCCESS;
 }
 
-static int authenticate_with_pam(const char *password)
+static int authenticate_with_pam(const char *password, char *reason, size_t reason_length)
 {
     struct pam_conv conv;
     struct pam_password_state state;
@@ -131,13 +165,20 @@ static int authenticate_with_pam(const char *password)
     struct passwd *pwd;
     int result;
 
+    if (reason != 0 && reason_length > 0) {
+        reason[0] = '\0';
+    }
+
     if (password == 0 || password[0] == '\0') {
+        errno = EINVAL;
+        copy_message(reason, reason_length, "empty password");
         return -1;
     }
 
     if (user == 0 || user[0] == '\0') {
         pwd = getpwuid(getuid());
         if (pwd == 0 || pwd->pw_name == 0) {
+            copy_message(reason, reason_length, "could not resolve current user");
             return -1;
         }
         user = pwd->pw_name;
@@ -147,44 +188,105 @@ static int authenticate_with_pam(const char *password)
     conv.conv = pam_password_conversation;
     conv.appdata_ptr = &state;
 
-    result = pam_start("login", user, &conv, &pamh);
+    result = pam_start(PADLOCK_PAM_SERVICE, user, &conv, &pamh);
     if (result != PAM_SUCCESS) {
+        errno = EACCES;
+        copy_pam_message(reason, reason_length, result, pamh);
         return -1;
     }
 
     result = pam_authenticate(pamh, 0);
+
+    if (result != PAM_SUCCESS) {
+        copy_pam_message(reason, reason_length, result, pamh);
+    }
+    pam_end(pamh, result);
     if (result == PAM_SUCCESS) {
-        result = pam_acct_mgmt(pamh, 0);
+        return 0;
     }
 
-    pam_end(pamh, result);
-    return result == PAM_SUCCESS ? 0 : -1;
+    errno = EACCES;
+    return -1;
 }
 
-static int derive_header_password(char *header_password, size_t header_password_length)
+static int derive_header_password(const char *username, char *header_password, size_t header_password_length, char *reason, size_t reason_length)
 {
     char login_password[512];
+    char prompt[128];
     int result;
 
-    if (prompt_password("Linux password: ", login_password, sizeof(login_password)) != 0) {
+    if (username == 0 || username[0] == '\0') {
+        username = "user";
+    }
+
+    if (snprintf(prompt, sizeof(prompt), "Enter the password for '%s': ", username) <= 0) {
+        errno = EINVAL;
         return -1;
     }
 
-    if (authenticate_with_pam(login_password) != 0) {
+    if (prompt_password(prompt, login_password, sizeof(login_password)) != 0) {
+        errno = EIO;
+        copy_message(reason, reason_length, "could not read password");
+        return -1;
+    }
+
+    if (authenticate_with_pam(login_password, reason, reason_length) != 0) {
         secure_zero(login_password, sizeof(login_password));
         return -1;
     }
 
     result = padlock_derive_header_password(login_password, header_password, header_password_length);
     secure_zero(login_password, sizeof(login_password));
+    if (result != 0) {
+        if (errno == EACCES) {
+            copy_message(reason, reason_length, "TPM access denied while deriving header password");
+        } else if (errno != 0) {
+            char detail[128];
+            snprintf(detail, sizeof(detail), "header password derivation failed: %s", strerror(errno));
+            copy_message(reason, reason_length, detail);
+        } else {
+            errno = EIO;
+            copy_message(reason, reason_length, "header password derivation failed");
+        }
+    }
     return result;
+}
+
+static void report_failure(const char *action)
+{
+    if (errno != 0) {
+        fprintf(stderr, "padlock: %s: %s\n", action, strerror(errno));
+        return;
+    }
+
+    fprintf(stderr, "padlock: %s failed\n", action);
+}
+
+static void report_failure_with_detail(const char *action, const char *detail)
+{
+    if (detail != 0 && detail[0] != '\0') {
+        fprintf(stderr, "padlock: %s: %s\n", action, detail);
+        return;
+    }
+
+    report_failure(action);
 }
 
 int main(int argc, char **argv)
 {
     char path[4096];
     char header_password[65];
+    char auth_error[256];
+    const char *username = getenv("USER");
+    struct passwd *pwd;
     int result;
+
+    if (username == 0 || username[0] == '\0') {
+        pwd = getpwuid(getuid());
+        if (pwd != 0 && pwd->pw_name != 0) {
+            username = pwd->pw_name;
+        }
+    }
 
     if (argc < 2) {
         usage(stderr);
@@ -201,10 +303,14 @@ int main(int argc, char **argv)
             fprintf(stderr, "padlock: could not resolve store path\n");
             return 1;
         }
-        if (derive_header_password(header_password, sizeof(header_password)) != 0
-            || padlock_allocate(path, size, header_password) != 0) {
+        if (derive_header_password(username, header_password, sizeof(header_password), auth_error, sizeof(auth_error)) != 0) {
             secure_zero(header_password, sizeof(header_password));
-            fprintf(stderr, "padlock: allocation failed\n");
+            report_failure_with_detail("authentication", auth_error);
+            return 1;
+        }
+        if (padlock_allocate(path, size, header_password) != 0) {
+            secure_zero(header_password, sizeof(header_password));
+            report_failure("allocation");
             return 1;
         }
         secure_zero(header_password, sizeof(header_password));
@@ -221,10 +327,14 @@ int main(int argc, char **argv)
             fprintf(stderr, "padlock: could not resolve store path\n");
             return 1;
         }
-        if (derive_header_password(header_password, sizeof(header_password)) != 0
-            || padlock_set(path, header_password, argv[2], argv[3], (uint32_t) strlen(argv[3])) != 0) {
+        if (derive_header_password(username, header_password, sizeof(header_password), auth_error, sizeof(auth_error)) != 0) {
             secure_zero(header_password, sizeof(header_password));
-            fprintf(stderr, "padlock: set failed\n");
+            report_failure_with_detail("authentication", auth_error);
+            return 1;
+        }
+        if (padlock_set(path, header_password, argv[2], argv[3], (uint32_t) strlen(argv[3])) != 0) {
+            secure_zero(header_password, sizeof(header_password));
+            report_failure("set");
             return 1;
         }
         secure_zero(header_password, sizeof(header_password));
@@ -242,10 +352,15 @@ int main(int argc, char **argv)
             fprintf(stderr, "padlock: could not resolve store path\n");
             return 1;
         }
-        result = derive_header_password(header_password, sizeof(header_password));
-        if (result != 0 || padlock_get(path, header_password, argv[2], &value, &value_length) != 0) {
+        result = derive_header_password(username, header_password, sizeof(header_password), auth_error, sizeof(auth_error));
+        if (result != 0) {
             secure_zero(header_password, sizeof(header_password));
-            fprintf(stderr, "padlock: key not found or header password invalid\n");
+            report_failure_with_detail("authentication", auth_error);
+            return 1;
+        }
+        if (padlock_get(path, header_password, argv[2], &value, &value_length) != 0) {
+            secure_zero(header_password, sizeof(header_password));
+            report_failure("lookup");
             return 1;
         }
         secure_zero(header_password, sizeof(header_password));
