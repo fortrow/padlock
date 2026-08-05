@@ -526,19 +526,11 @@ static const struct file_operations padlock_guard_fops = {
     .llseek = noop_llseek,
 };
 
-static void padlock_guard_kprobe_post(struct kprobe *p, struct pt_regs *regs, unsigned long flags)
-{
-    (void) p;
-    (void) regs;
-    (void) flags;
-}
-
 static int padlock_guard_register_probe(struct kprobe *probe, const char *symbol, kprobe_pre_handler_t handler)
 {
     memset(probe, 0, sizeof(*probe));
     probe->symbol_name = symbol;
     probe->pre_handler = handler;
-    probe->post_handler = padlock_guard_kprobe_post;
     return register_kprobe(probe);
 }
 
