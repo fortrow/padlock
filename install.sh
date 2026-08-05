@@ -494,6 +494,7 @@ setup_disk_image_keystore() {
   local image_dir
 
   store_size_bytes="$(size_to_bytes "${store_size}")"
+  configure_disk_image_paths "${home_dir}"
   image_dir="$(dirname "${DISK_IMAGE_PATH}")"
   create_disk_image "${home_dir}" "${store_size_bytes}"
   run_root chown "${TARGET_USER}:${TARGET_USER}" "${image_dir}"
