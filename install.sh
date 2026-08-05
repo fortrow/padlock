@@ -245,8 +245,22 @@ build_padlock() {
   if [[ -z "${KERNEL_BUILD_DIR}" ]]; then
     detect_kernel_build_dir
   fi
+  run_root rm -rf "${BUILD_DIR}"
   cmake -S "${PADLOCK_DIR}" -B "${BUILD_DIR}" -DPADLOCK_KERNEL_BUILD="${KERNEL_BUILD_DIR}"
   cmake --build "${BUILD_DIR}" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
+}
+
+clean_kernel_guard_artifacts() {
+  run_root rm -f \
+    "${PADLOCK_DIR}/kernel/guard"/.hardcode_padlock_guard.* \
+    "${PADLOCK_DIR}/kernel/guard"/hardcode_padlock_guard.ko \
+    "${PADLOCK_DIR}/kernel/guard"/hardcode_padlock_guard.mod \
+    "${PADLOCK_DIR}/kernel/guard"/hardcode_padlock_guard.mod.c \
+    "${PADLOCK_DIR}/kernel/guard"/hardcode_padlock_guard.mod.o \
+    "${PADLOCK_DIR}/kernel/guard"/hardcode_padlock_guard.o \
+    "${PADLOCK_DIR}/kernel/guard"/hardcode_padlock_guard.o.cmd \
+    "${PADLOCK_DIR}/kernel/guard"/Module.symvers \
+    "${PADLOCK_DIR}/kernel/guard"/modules.order
 }
 
 install_padlock() {
@@ -588,6 +602,7 @@ main() {
   esac
 
   write_pam_service
+  clean_kernel_guard_artifacts
   build_padlock
   install_padlock
   if [[ "${AWS_LINUX}" == true ]]; then
