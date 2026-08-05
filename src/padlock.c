@@ -176,11 +176,6 @@ static int padlock_tpm_connect(ESYS_CONTEXT **esys, TSS2_TCTI_CONTEXT **tcti)
     *tcti = 0;
     *esys = 0;
 
-    if (access("/dev/tpmrm0", R_OK | W_OK) != 0 && access("/dev/tpm0", R_OK | W_OK) != 0) {
-        errno = EACCES;
-        return -1;
-    }
-
     rc = Tss2_TctiLdr_Initialize("device:/dev/tpmrm0", tcti);
     if (rc != TSS2_RC_SUCCESS) {
         rc = Tss2_TctiLdr_Initialize("device:/dev/tpm0", tcti);
