@@ -534,6 +534,18 @@ static int padlock_guard_register_probe(struct kprobe *probe, const char *symbol
     return register_kprobe(probe);
 }
 
+static int padlock_guard_register_optional_probe(struct kprobe *probe, const char *symbol, kprobe_pre_handler_t handler)
+{
+    int result = padlock_guard_register_probe(probe, symbol, handler);
+
+    if (result == -ENOENT) {
+        pr_info("probe %s is unavailable on this kernel; continuing without it\n", symbol);
+        return 0;
+    }
+
+    return result;
+}
+
 static void padlock_guard_unregister_all_probes(void)
 {
     unregister_kprobe(&padlock_guard_probe_file_permission);
@@ -572,7 +584,7 @@ static int __init padlock_guard_init(void)
         goto fail_misc;
     }
 
-    result = padlock_guard_register_probe(
+    result = padlock_guard_register_optional_probe(
         &padlock_guard_probe_file_truncate,
         "security_file_truncate",
         padlock_guard_kprobe_file_truncate
@@ -583,7 +595,7 @@ static int __init padlock_guard_init(void)
     }
 
 #ifdef CONFIG_SECURITY_PATH
-    result = padlock_guard_register_probe(
+    result = padlock_guard_register_optional_probe(
         &padlock_guard_probe_path_unlink,
         "security_path_unlink",
         padlock_guard_kprobe_path_unlink
@@ -593,7 +605,7 @@ static int __init padlock_guard_init(void)
         goto fail_probes;
     }
 
-    result = padlock_guard_register_probe(
+    result = padlock_guard_register_optional_probe(
         &padlock_guard_probe_path_rename,
         "security_path_rename",
         padlock_guard_kprobe_path_rename
@@ -603,7 +615,7 @@ static int __init padlock_guard_init(void)
         goto fail_probes;
     }
 
-    result = padlock_guard_register_probe(
+    result = padlock_guard_register_optional_probe(
         &padlock_guard_probe_path_truncate,
         "security_path_truncate",
         padlock_guard_kprobe_path_truncate
