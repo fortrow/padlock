@@ -164,6 +164,10 @@ The install step places:
 - `hardcode/padlock.h` in `/usr/include/hardcode`
 - `hardcode/padlock_guard.h` in `/usr/include/hardcode`
 
+The installed `padlock` binary is configured to find `libpadlock.so.0` in the
+matching sibling `lib` directory for the chosen prefix, so you should not need
+to set `LD_LIBRARY_PATH` manually.
+
 ### Runtime Setup
 
 #### TPM device access

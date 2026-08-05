@@ -57,7 +57,7 @@ target_include_directories(padlock PRIVATE ${PADLOCK_INCLUDE_DIR} ${PADLOCK_TPM_
 target_link_libraries(padlock PRIVATE padlock_shared crypto pam ${TSS2_ESYS_LIB} ${TSS2_MU_LIB} ${TSS2_TCTILDR_LIB} ${TSS2_TCTI_DEVICE_LIB})
 set_target_properties(padlock PROPERTIES
     BUILD_RPATH "$ORIGIN"
-    INSTALL_RPATH "$ORIGIN"
+    INSTALL_RPATH "$ORIGIN/../lib"
 )
 
 add_executable(padlock_test

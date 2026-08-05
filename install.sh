@@ -99,6 +99,7 @@ build_padlock() {
 install_padlock() {
   log "Installing padlock to /usr/local"
   run_root cmake --install "${BUILD_DIR}" --prefix /usr/local
+  run_root ldconfig
 }
 
 build_guard() {
