@@ -29,6 +29,7 @@ __used __section("__versions") = {
 	{ 0x31ea07ad, "module_put" },
 	{ 0x7ed256c3, "noop_llseek" },
 	{ 0xd272d446, "__fentry__" },
+	{ 0xd272d446, "__x86_return_thunk" },
 	{ 0xbd03ed67, "__ref_stack_chk_guard" },
 	{ 0xaa178104, "kern_path" },
 	{ 0xfedd0192, "path_put" },
@@ -56,6 +57,7 @@ __used __section("__version_ext_crcs") = {
 	0x31ea07ad,
 	0x7ed256c3,
 	0xd272d446,
+	0xd272d446,
 	0xbd03ed67,
 	0xaa178104,
 	0xfedd0192,
@@ -82,6 +84,7 @@ __used __section("__version_ext_names") =
 	"module_put\0"
 	"noop_llseek\0"
 	"__fentry__\0"
+	"__x86_return_thunk\0"
 	"__ref_stack_chk_guard\0"
 	"kern_path\0"
 	"path_put\0"
