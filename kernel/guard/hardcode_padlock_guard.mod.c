@@ -18,24 +18,17 @@ __section(".gnu.linkonce.this_module") = {
 
 static const struct modversion_info ____versions[]
 __used __section("__versions") = {
-	{ 0xbd03ed67, "random_kmalloc_seed" },
-	{ 0x9f568b3d, "kmalloc_caches" },
-	{ 0xea8ca849, "__kmalloc_cache_noprof" },
-	{ 0x092a35a2, "_copy_from_user" },
 	{ 0x9aa6980d, "mutex_lock" },
-	{ 0x9aa6980d, "mutex_unlock" },
-	{ 0x092a35a2, "_copy_to_user" },
-	{ 0xcb8b6ec6, "kfree" },
 	{ 0xee26d75d, "const_current_task" },
-	{ 0x224a53e7, "get_random_bytes" },
-	{ 0x9479a1e8, "strnlen" },
-	{ 0xd70733be, "sized_strscpy" },
-	{ 0xe54e0a6b, "__fortify_panic" },
+	{ 0x9aa6980d, "mutex_unlock" },
 	{ 0xe4de56b4, "__ubsan_handle_load_invalid_value" },
+	{ 0x092a35a2, "_copy_from_user" },
+	{ 0x092a35a2, "_copy_to_user" },
+	{ 0x224a53e7, "get_random_bytes" },
+	{ 0x90a48d82, "__ubsan_handle_out_of_bounds" },
 	{ 0x31ea07ad, "module_put" },
 	{ 0x7ed256c3, "noop_llseek" },
 	{ 0xd272d446, "__fentry__" },
-	{ 0xd272d446, "__x86_return_thunk" },
 	{ 0xbd03ed67, "__ref_stack_chk_guard" },
 	{ 0xaa178104, "kern_path" },
 	{ 0xfedd0192, "path_put" },
@@ -52,23 +45,16 @@ __used __section("__versions") = {
 
 static const u32 ____version_ext_crcs[]
 __used __section("__version_ext_crcs") = {
-	0xbd03ed67,
-	0x9f568b3d,
-	0xea8ca849,
-	0x092a35a2,
 	0x9aa6980d,
-	0x9aa6980d,
-	0x092a35a2,
-	0xcb8b6ec6,
 	0xee26d75d,
-	0x224a53e7,
-	0x9479a1e8,
-	0xd70733be,
-	0xe54e0a6b,
+	0x9aa6980d,
 	0xe4de56b4,
+	0x092a35a2,
+	0x092a35a2,
+	0x224a53e7,
+	0x90a48d82,
 	0x31ea07ad,
 	0x7ed256c3,
-	0xd272d446,
 	0xd272d446,
 	0xbd03ed67,
 	0xaa178104,
@@ -85,24 +71,17 @@ __used __section("__version_ext_crcs") = {
 };
 static const char ____version_ext_names[]
 __used __section("__version_ext_names") =
-	"random_kmalloc_seed\0"
-	"kmalloc_caches\0"
-	"__kmalloc_cache_noprof\0"
-	"_copy_from_user\0"
 	"mutex_lock\0"
-	"mutex_unlock\0"
-	"_copy_to_user\0"
-	"kfree\0"
 	"const_current_task\0"
-	"get_random_bytes\0"
-	"strnlen\0"
-	"sized_strscpy\0"
-	"__fortify_panic\0"
+	"mutex_unlock\0"
 	"__ubsan_handle_load_invalid_value\0"
+	"_copy_from_user\0"
+	"_copy_to_user\0"
+	"get_random_bytes\0"
+	"__ubsan_handle_out_of_bounds\0"
 	"module_put\0"
 	"noop_llseek\0"
 	"__fentry__\0"
-	"__x86_return_thunk\0"
 	"__ref_stack_chk_guard\0"
 	"kern_path\0"
 	"path_put\0"
@@ -120,4 +99,4 @@ __used __section("__version_ext_names") =
 MODULE_INFO(depends, "");
 
 
-MODULE_INFO(srcversion, "6086DCC589D8A518C87514D");
+MODULE_INFO(srcversion, "C9609AEAB94F565D9B76255");

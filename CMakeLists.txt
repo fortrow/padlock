@@ -15,7 +15,32 @@ set(PADLOCK_INCLUDE_DIR ${PADLOCK_SOURCE_DIR}/include)
 set(PADLOCK_TPM_INCLUDE_DIR ${PADLOCK_SOURCE_DIR}/third_party/tpm2-tss/include)
 set(PADLOCK_KERNEL_DIR ${PADLOCK_SOURCE_DIR}/kernel/guard)
 execute_process(COMMAND uname -r OUTPUT_VARIABLE PADLOCK_KERNEL_RELEASE OUTPUT_STRIP_TRAILING_WHITESPACE)
-set(PADLOCK_KERNEL_BUILD /lib/modules/${PADLOCK_KERNEL_RELEASE}/build)
+set(PADLOCK_KERNEL_BUILD "" CACHE PATH "Kernel build directory for the guard module")
+if(PADLOCK_KERNEL_BUILD STREQUAL "")
+    set(PADLOCK_KERNEL_BUILD_CANDIDATES
+        /lib/modules/${PADLOCK_KERNEL_RELEASE}/build
+        /usr/src/kernels/${PADLOCK_KERNEL_RELEASE}
+    )
+    foreach(PADLOCK_KERNEL_BUILD_CANDIDATE IN LISTS PADLOCK_KERNEL_BUILD_CANDIDATES)
+        if(EXISTS "${PADLOCK_KERNEL_BUILD_CANDIDATE}/Makefile")
+            set(PADLOCK_KERNEL_BUILD "${PADLOCK_KERNEL_BUILD_CANDIDATE}")
+            break()
+        endif()
+    endforeach()
+endif()
+
+if(PADLOCK_KERNEL_BUILD STREQUAL "")
+    message(FATAL_ERROR
+        "Could not find kernel headers for ${PADLOCK_KERNEL_RELEASE}. "
+        "Set PADLOCK_KERNEL_BUILD to the kernel build directory."
+    )
+endif()
+
+if(NOT EXISTS "${PADLOCK_KERNEL_BUILD}/Makefile")
+    message(FATAL_ERROR
+        "Kernel build directory ${PADLOCK_KERNEL_BUILD} does not contain a Makefile."
+    )
+endif()
 set(TSS2_ESYS_LIB tss2-esys)
 set(TSS2_MU_LIB tss2-mu)
 set(TSS2_TCTILDR_LIB tss2-tctildr)

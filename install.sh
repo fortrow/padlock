@@ -21,6 +21,7 @@ DISK_IMAGE_MARGIN_BYTES=$((64 * 1024 * 1024))
 DISK_IMAGE_PATH=""
 MOUNT_POINT=""
 TARGET_HOME=""
+KERNEL_BUILD_DIR=""
 
 log() {
   printf '%s\n' "$*"
@@ -47,6 +48,28 @@ and allocate an enclave keystore of the requested size.
 Dependency installation is automatic when apt-get or dnf is available.
 Set INSTALL_DEPS=0 to skip dependency installation.
 EOF
+}
+
+detect_kernel_build_dir() {
+  local kernel_release
+  local candidate
+  local candidates=(
+    "/lib/modules/$(uname -r)/build"
+    "/usr/src/kernels/$(uname -r)"
+  )
+
+  kernel_release="$(uname -r)"
+  for candidate in "${candidates[@]}"; do
+    if [[ -r "${candidate}/Makefile" ]]; then
+      KERNEL_BUILD_DIR="${candidate}"
+      return 0
+    fi
+  done
+
+  log "install.sh: could not find kernel headers for ${kernel_release}"
+  log "install.sh: looked for ${candidates[*]}"
+  log "install.sh: install the matching kernel headers or set PADLOCK_KERNEL_BUILD explicitly"
+  exit 1
 }
 
 require_root_or_sudo() {
@@ -219,7 +242,10 @@ EOF
 
 build_padlock() {
   log "Configuring and building padlock"
-  cmake -S "${PADLOCK_DIR}" -B "${BUILD_DIR}"
+  if [[ -z "${KERNEL_BUILD_DIR}" ]]; then
+    detect_kernel_build_dir
+  fi
+  cmake -S "${PADLOCK_DIR}" -B "${BUILD_DIR}" -DPADLOCK_KERNEL_BUILD="${KERNEL_BUILD_DIR}"
   cmake --build "${BUILD_DIR}" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
 }
 

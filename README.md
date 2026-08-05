@@ -31,6 +31,10 @@ that is mounted through `/etc/fstab` with `nodev,nosuid,noexec`.
 Use `--enclave <size>` to create the `enclave` user, build Padlock for the
 enclave workflow, and allocate an encrypted keystore of the requested size
 inside `/enclave/keystore`.
+The installer autodetects the running kernel release and looks for headers in
+`/lib/modules/$(uname -r)/build` first, then `/usr/src/kernels/$(uname -r)`.
+If neither exists, it stops and tells you to install the matching kernel
+headers.
 
 ### Ubuntu or Debian
 

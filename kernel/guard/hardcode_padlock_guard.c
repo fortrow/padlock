@@ -16,7 +16,6 @@
 #include <linux/mutex.h>
 #include <linux/namei.h>
 #include <linux/random.h>
-#include <linux/slab.h>
 #include <linux/ptrace.h>
 #include <linux/uaccess.h>
 #include <asm/ptrace.h>
@@ -28,9 +27,11 @@ MODULE_DESCRIPTION("Padlock guard module for protected store writes");
 MODULE_LICENSE("GPL");
 
 #define PADLOCK_GUARD_HASH_BITS 8
+#define PADLOCK_GUARD_MAX_ENTRIES 64
 
 struct padlock_guard_entry {
     struct hlist_node node;
+    bool in_use;
     dev_t dev;
     unsigned long ino;
     char path[PADLOCK_GUARD_PATH_MAX];
@@ -45,6 +46,7 @@ struct padlock_guard_entry {
 
 static DEFINE_MUTEX(padlock_guard_lock);
 static DEFINE_HASHTABLE(padlock_guard_table, PADLOCK_GUARD_HASH_BITS);
+static struct padlock_guard_entry padlock_guard_entries[PADLOCK_GUARD_MAX_ENTRIES];
 static struct kprobe padlock_guard_probe_file_permission;
 static struct kprobe padlock_guard_probe_file_truncate;
 #ifdef CONFIG_SECURITY_PATH
@@ -59,6 +61,32 @@ static bool padlock_guard_pinned;
 static u64 padlock_guard_key(dev_t dev, unsigned long ino)
 {
     return (((u64) dev) << 32u) ^ (u64) ino;
+}
+
+static void padlock_guard_copy_path(char *dst, size_t dst_len, const char *src)
+{
+    size_t length;
+    size_t index;
+
+    if (!dst || dst_len == 0) {
+        return;
+    }
+
+    if (!src) {
+        dst[0] = '\0';
+        return;
+    }
+
+    for (length = 0; length + 1u < dst_len; length++) {
+        if (src[length] == '\0') {
+            break;
+        }
+    }
+
+    for (index = 0; index < length; index++) {
+        dst[index] = src[index];
+    }
+    dst[length] = '\0';
 }
 
 static struct padlock_guard_entry *padlock_guard_find_locked(dev_t dev, unsigned long ino)
@@ -283,18 +311,27 @@ static int padlock_guard_register_entry(const char *path, padlock_guard_u64 star
     mutex_lock(&padlock_guard_lock);
     entry = padlock_guard_find_inode_locked(inode);
     if (!entry) {
-        entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+        entry = NULL;
+        for (size_t index = 0; index < PADLOCK_GUARD_MAX_ENTRIES; index++) {
+            if (!padlock_guard_entries[index].in_use) {
+                entry = &padlock_guard_entries[index];
+                *entry = (struct padlock_guard_entry) {0};
+                entry->in_use = true;
+                entry->dev = inode->i_sb->s_dev;
+                entry->ino = inode->i_ino;
+                hash_add(padlock_guard_table, &entry->node, padlock_guard_key(entry->dev, entry->ino));
+                break;
+            }
+        }
+
         if (!entry) {
             mutex_unlock(&padlock_guard_lock);
             path_put(&resolved);
-            return -ENOMEM;
+            return -ENOSPC;
         }
-        entry->dev = inode->i_sb->s_dev;
-        entry->ino = inode->i_ino;
-        hash_add(padlock_guard_table, &entry->node, padlock_guard_key(entry->dev, entry->ino));
     }
 
-    strscpy(entry->path, path, sizeof(entry->path));
+    padlock_guard_copy_path(entry->path, sizeof(entry->path), path);
     entry->start = start;
     entry->length = length;
     entry->locked = true;
@@ -331,9 +368,9 @@ static void padlock_guard_unregister_entry(const char *path)
         return;
     }
     hash_del(&entry->node);
+    entry->in_use = false;
     mutex_unlock(&padlock_guard_lock);
     path_put(&resolved);
-    kfree(entry);
 }
 
 static int padlock_guard_begin_session(struct padlock_guard_request *request)
@@ -431,7 +468,7 @@ static int padlock_guard_query(struct padlock_guard_request *request)
 
 static long padlock_guard_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-    struct padlock_guard_request *request;
+    struct padlock_guard_request request = {0};
     int result;
 
     (void) file;
@@ -440,56 +477,45 @@ static long padlock_guard_ioctl(struct file *file, unsigned int cmd, unsigned lo
         return -ENOTTY;
     }
 
-    request = kzalloc(sizeof(*request), GFP_KERNEL);
-    if (!request) {
-        return -ENOMEM;
-    }
-
-    if (copy_from_user(request, (void __user *) arg, sizeof(*request)) != 0) {
-        kfree(request);
+    if (copy_from_user(&request, (void __user *) arg, sizeof(request)) != 0) {
         return -EFAULT;
     }
 
     switch (cmd) {
         case PADLOCK_GUARD_IOCTL_REGISTER:
-            if (request->path[PADLOCK_GUARD_PATH_MAX - 1u] != '\0') {
-                kfree(request);
+            if (request.path[PADLOCK_GUARD_PATH_MAX - 1u] != '\0') {
                 return -ENAMETOOLONG;
             }
-            result = padlock_guard_register_entry(request->path, request->start, request->length);
-            request->flags = result == 0 ? PADLOCK_GUARD_FLAG_LOCKED : 0;
+            result = padlock_guard_register_entry(request.path, request.start, request.length);
+            request.flags = result == 0 ? PADLOCK_GUARD_FLAG_LOCKED : 0;
             break;
         case PADLOCK_GUARD_IOCTL_UNREGISTER:
-            padlock_guard_unregister_entry(request->path);
+            padlock_guard_unregister_entry(request.path);
             result = 0;
             break;
         case PADLOCK_GUARD_IOCTL_BEGIN_WRITE:
-            result = padlock_guard_begin_session(request);
+            result = padlock_guard_begin_session(&request);
             break;
         case PADLOCK_GUARD_IOCTL_END_WRITE:
-            result = padlock_guard_end_session(request);
+            result = padlock_guard_end_session(&request);
             break;
         case PADLOCK_GUARD_IOCTL_QUERY:
-            result = padlock_guard_query(request);
+            result = padlock_guard_query(&request);
             break;
         default:
-            kfree(request);
             return -ENOTTY;
     }
 
     if (result != 0) {
-        kfree(request);
         return result;
     }
 
     if (_IOC_DIR(cmd) & _IOC_READ) {
-        if (copy_to_user((void __user *) arg, request, sizeof(*request)) != 0) {
-            kfree(request);
+        if (copy_to_user((void __user *) arg, &request, sizeof(request)) != 0) {
             return -EFAULT;
         }
     }
 
-    kfree(request);
     return 0;
 }
 
