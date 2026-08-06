@@ -815,6 +815,66 @@ static int ensure_parent_directory(const char *path)
     return -1;
 }
 
+static int write_urandom_bytes(FILE *file, uint64_t length)
+{
+    enum { BUFFER_SIZE = 1024 * 1024 };
+    int random_fd = -1;
+    unsigned char *buffer = 0;
+    uint64_t remaining = length;
+    int ok = -1;
+
+    buffer = malloc(BUFFER_SIZE);
+    if (buffer == 0) {
+        return -1;
+    }
+
+    random_fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+    if (random_fd < 0) {
+        goto done;
+    }
+
+    while (remaining > 0) {
+        size_t amount = remaining > BUFFER_SIZE ? BUFFER_SIZE : (size_t) remaining;
+        size_t read_total = 0;
+        size_t write_total = 0;
+
+        while (read_total < amount) {
+            ssize_t read_result = read(random_fd, buffer + read_total, amount - read_total);
+            if (read_result < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                goto done;
+            }
+            if (read_result == 0) {
+                errno = EIO;
+                goto done;
+            }
+            read_total += (size_t) read_result;
+        }
+
+        while (write_total < amount) {
+            size_t written = fwrite(buffer + write_total, 1u, amount - write_total, file);
+            if (written == 0) {
+                goto done;
+            }
+            write_total += written;
+        }
+
+        remaining -= amount;
+    }
+
+    ok = 0;
+
+done:
+    if (random_fd >= 0) {
+        close(random_fd);
+    }
+    padlock_secure_zero(buffer, BUFFER_SIZE);
+    free(buffer);
+    return ok;
+}
+
 static int derive_header_key(const char *password, const unsigned char salt[PADLOCK_SALT_SIZE], unsigned char key[32])
 {
     if (password == 0 || password[0] == '\0') {
@@ -1034,10 +1094,8 @@ int padlock_allocate(const char *path, uint64_t size, const char *password)
     FILE *file = 0;
     int fd = -1;
     char temp_path[PATH_MAX] = {0};
-    unsigned char chunk[65536];
     unsigned char xts_key[PADLOCK_XTS_KEY_SIZE];
     padlock_header header;
-    uint64_t remaining;
     int ok = -1;
 
     if (path == 0 || password == 0 || size < PADLOCK_MIN_SIZE) {
@@ -1066,13 +1124,8 @@ int padlock_allocate(const char *path, uint64_t size, const char *password)
     }
     fd = -1;
 
-    remaining = size;
-    while (remaining > 0) {
-        size_t amount = remaining > sizeof(chunk) ? sizeof(chunk) : (size_t) remaining;
-        if (RAND_bytes(chunk, (int) amount) != 1 || fwrite(chunk, 1u, amount, file) != amount) {
-            goto done;
-        }
-        remaining -= amount;
+    if (write_urandom_bytes(file, size) != 0) {
+        goto done;
     }
 
     memset(&header, 0, sizeof(header));
@@ -1114,7 +1167,6 @@ done:
     if (ok != 0 && temp_path[0] != '\0') {
         unlink(temp_path);
     }
-    padlock_secure_zero(chunk, sizeof(chunk));
     padlock_secure_zero(xts_key, sizeof(xts_key));
     return ok;
 }
