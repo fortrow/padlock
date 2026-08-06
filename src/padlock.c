@@ -1032,6 +1032,8 @@ done:
 int padlock_allocate(const char *path, uint64_t size, const char *password)
 {
     FILE *file = 0;
+    int fd = -1;
+    char temp_path[PATH_MAX] = {0};
     unsigned char chunk[65536];
     unsigned char xts_key[PADLOCK_XTS_KEY_SIZE];
     padlock_header header;
@@ -1045,11 +1047,24 @@ int padlock_allocate(const char *path, uint64_t size, const char *password)
         return -1;
     }
 
-    file = fopen(path, "wb+");
-    if (file == 0) {
+    if (snprintf(temp_path, sizeof(temp_path), "%s.tmp.XXXXXX", path) >= (int) sizeof(temp_path)) {
         return -1;
     }
-    chmod(path, 0600);
+
+    fd = mkstemp(temp_path);
+    if (fd < 0) {
+        return -1;
+    }
+
+    if (fchmod(fd, 0600) != 0) {
+        goto done;
+    }
+
+    file = fdopen(fd, "wb+");
+    if (file == 0) {
+        goto done;
+    }
+    fd = -1;
 
     remaining = size;
     while (remaining > 0) {
@@ -1073,11 +1088,31 @@ int padlock_allocate(const char *path, uint64_t size, const char *password)
         goto done;
     }
 
+    if (fflush(file) != 0 || fsync(fileno(file)) != 0) {
+        goto done;
+    }
+
+    if (fclose(file) != 0) {
+        file = 0;
+        goto done;
+    }
+    file = 0;
+
+    if (rename(temp_path, path) != 0) {
+        goto done;
+    }
+
     ok = 0;
 
 done:
     if (file != 0) {
         fclose(file);
+    }
+    if (fd >= 0) {
+        close(fd);
+    }
+    if (ok != 0 && temp_path[0] != '\0') {
+        unlink(temp_path);
     }
     padlock_secure_zero(chunk, sizeof(chunk));
     padlock_secure_zero(xts_key, sizeof(xts_key));
