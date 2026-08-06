@@ -451,7 +451,12 @@ install_enclave_wrapper() {
   local home_dir="$1"
 
   log "Installing enclave padlock wrapper to ${PADLOCK_BIN}"
-  run_root mv -f "${PADLOCK_BIN}" "${PADLOCK_REAL_BIN}"
+  if [[ -e "${PADLOCK_BIN}" ]]; then
+    run_root mv -f "${PADLOCK_BIN}" "${PADLOCK_REAL_BIN}"
+  elif [[ ! -e "${PADLOCK_REAL_BIN}" ]]; then
+    log "install.sh: expected ${PADLOCK_BIN} or ${PADLOCK_REAL_BIN} to exist before installing wrapper"
+    exit 1
+  fi
   run_root tee "${PADLOCK_BIN}" >/dev/null <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
